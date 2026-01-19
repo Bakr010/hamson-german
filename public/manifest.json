@@ -4,8 +4,8 @@
   "description": "An interactive German language learning application",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#3b82f6",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
   "orientation": "portrait-primary",
   "icons": [
     {
