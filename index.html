@@ -6,6 +6,29 @@
     <link rel="manifest" href="manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>German Study Playground</title>
+    <style>
+      :root {
+        --background: #1a1a1a;
+        --foreground: #f5f5f5;
+        --card: #1a1a1a;
+        --card-foreground: #f5f5f5;
+        --secondary: #333333;
+        --secondary-foreground: #f5f5f5;
+        --muted: #333333;
+        --muted-foreground: #a3a3a3;
+        --border: #333333;
+        --accent: #333333;
+        --primary: #f5f5f5;
+        --primary-foreground: #171717;
+      }
+      html, body {
+        background-color: var(--background);
+        color: var(--foreground);
+      }
+      aside { background-color: var(--card); border-right: 1px solid var(--border); }
+      #new-lesson-btn { background-color: var(--secondary); color: var(--secondary-foreground); }
+      button { border-color: var(--border); }
+    </style>
   </head>
   <body class="min-h-screen bg-background font-sans antialiased overflow-hidden">
     <div id="app" class="flex h-screen">
@@ -61,7 +84,7 @@
           <div id="view-lesson-details" class="hidden space-y-6">
             <div class="flex items-center justify-between mb-6">
               <div>
-                <h2 id="lesson-title" class="text-2xl font-bold tracking-tight">Lesson #1</h2>
+                <h2 id="lesson-title" contenteditable="true" class="text-2xl font-bold tracking-tight focus:outline-none focus:ring-1 focus:ring-ring rounded px-1 -ml-1">Lesson #1</h2>
                 <p id="lesson-date" class="text-sm text-muted-foreground">Created on ...</p>
               </div>
               <button id="delete-lesson-btn" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-destructive text-destructive-foreground hover:bg-destructive/90 h-9 px-4 py-2">
@@ -78,26 +101,6 @@
                 </div>
               </div>
             </div>
-
-            <!-- Conversation Content
-            <div id="lesson-conversation-section" class="rounded-xl bg-muted/20 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div class="p-6 border-b border-border/40">
-                <h3 class="font-semibold">Conversation Practice</h3>
-              </div>
-              <div id="lesson-conversation-content" class="p-6 space-y-4">
-                Content
-              </div>
-            </div> -->
-
-            <!-- Sentence Content
-            <div id="lesson-sentence-section" class="rounded-xl bg-muted/20 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div class="p-6 border-b border-border/40">
-                <h3 class="font-semibold">Daily Sentence</h3>
-              </div>
-              <div id="lesson-sentence-content" class="p-6">
-                Content
-              </div>
-            </div> -->
 
           </div>
 

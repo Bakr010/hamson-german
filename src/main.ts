@@ -2,24 +2,41 @@ import './style.css'
 
 // Types
 interface Lesson {
-  id: string
+  id: number
   date: string
-  words: string[]
-  conversation: string | null
-  sentence: string | null
+  title: string
+  sentences: string[]
 }
 
 // State
 let lessons: Lesson[] = []
-let currentLessonId: string | null = null
-let isGenerating = false
+let currentLessonId: number | null = null
 
 // Initialize
 function init() {
   // Load lessons from local storage
   const savedLessons = localStorage.getItem('german-study-lessons')
   if (savedLessons) {
-    lessons = JSON.parse(savedLessons)
+    try {
+      lessons = JSON.parse(savedLessons)
+      // Migration/Cleanup for old ID format if necessary
+      if (lessons.length > 0 && typeof lessons[0].id === 'string') {
+        lessons = []
+        localStorage.removeItem('german-study-lessons')
+      }
+
+      // Migration for missing titles
+      let migrated = false
+      lessons.forEach((l, idx) => {
+        if (!l.title) {
+          l.title = `Lesson #${lessons.length - idx}`
+          migrated = true
+        }
+      })
+      if (migrated) saveLessons()
+    } catch (e) {
+      lessons = []
+    }
     renderLessonsList()
   }
 
@@ -34,24 +51,68 @@ function setupEventListeners() {
   document.getElementById('new-lesson-btn')?.addEventListener('click', showNewLessonView)
 
   // New Lesson View
-  const wordsInput = document.getElementById('words-input') as HTMLTextAreaElement
+  const textarea = document.getElementById('words-input') as HTMLTextAreaElement
   const generateBtn = document.getElementById('generate-btn') as HTMLButtonElement
 
-  wordsInput?.addEventListener('input', () => {
-    updateWordsPreview(wordsInput.value)
+  textarea?.addEventListener('input', () => {
+    const lines = textarea.value.split('\n').filter(line => line.trim())
+    const preview = document.getElementById('words-preview')!
+    if (lines.length > 0) {
+      preview.innerHTML = `Sentences ready: <strong class="text-foreground">${lines.length}</strong>`
+    } else {
+      preview.innerHTML = ''
+    }
   })
 
   generateBtn?.addEventListener('click', () => {
-    const words = wordsInput.value.trim()
-    if (words) {
-      createNewLesson(words)
+    const text = textarea.value.trim()
+    if (text) {
+      createNewLesson(text)
     }
   })
 
   // Lesson Details View
   document.getElementById('delete-lesson-btn')?.addEventListener('click', () => {
-    if (currentLessonId) {
+    if (currentLessonId !== null) {
       deleteLesson(currentLessonId)
+    }
+  })
+
+  const lessonTitle = document.getElementById('lesson-title')
+  lessonTitle?.addEventListener('blur', () => {
+    if (currentLessonId !== null && lessonTitle) {
+      updateLessonTitle(currentLessonId, lessonTitle.innerText)
+    }
+  })
+
+  lessonTitle?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      lessonTitle.blur()
+    }
+  })
+
+  // Event delegation for sentence editing and deleting
+  const display = document.getElementById('lesson-words-display')
+  display?.addEventListener('blur', (e) => {
+    const target = e.target as HTMLElement
+    if (target.classList.contains('sentence-edit')) {
+      const index = parseInt(target.getAttribute('data-index') || '0')
+      updateSentence(index, target.innerText)
+    }
+  }, true)
+
+  display?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement
+    const deleteBtn = target.closest('.delete-sentence-btn')
+    if (deleteBtn) {
+      const index = parseInt(deleteBtn.getAttribute('data-index') || '0')
+      deleteSentence(index)
+    }
+
+    const addBtn = target.closest('#add-sentence-btn')
+    if (addBtn) {
+      addSentenceToCurrentLesson()
     }
   })
 }
@@ -66,7 +127,8 @@ function showNewLessonView() {
   // Reset input
   const input = document.getElementById('words-input') as HTMLTextAreaElement
   if (input) input.value = ''
-  updateWordsPreview('')
+  const preview = document.getElementById('words-preview')
+  if (preview) preview.innerHTML = ''
   
   // Update active state in sidebar
   document.querySelectorAll('.lesson-item').forEach(el => {
@@ -75,7 +137,7 @@ function showNewLessonView() {
   })
 }
 
-function showLessonDetailsView(lessonId: string) {
+function showLessonDetailsView(lessonId: number) {
   const lesson = lessons.find(l => l.id === lessonId)
   if (!lesson) return
 
@@ -86,28 +148,38 @@ function showLessonDetailsView(lessonId: string) {
   // Update UI
   const titleEl = document.getElementById('lesson-title')
   const dateEl = document.getElementById('lesson-date')
-  const wordsDisplay = document.getElementById('lesson-words-display')
+  const display = document.getElementById('lesson-words-display')
   
-  if (titleEl) titleEl.textContent = `Lesson #${lessons.indexOf(lesson) + 1}`
+  if (titleEl) titleEl.textContent = lesson.title
   if (dateEl) dateEl.textContent = `Created on ${new Date(lesson.date).toLocaleDateString()}`
   
-  if (wordsDisplay) {
-    wordsDisplay.innerHTML = lesson.words.map(w => 
-      `<div class="p-2 m-2 rounded-lg text-sm">${w}</div>`
+  if (display) {
+    display.innerHTML = lesson.sentences.map((s, idx) => 
+      `<div class="relative group mb-2">
+        <div 
+          contenteditable="true" 
+          data-index="${idx}"
+          class="sentence-edit p-3 pr-10 rounded-lg bg-muted/50 text-sm border border-border/50 focus:outline-none focus:ring-1 focus:ring-ring"
+        >${s}</div>
+        <button 
+          data-index="${idx}"
+          class="delete-sentence-btn absolute right-1 top-1.5 opacity-0 hover:opacity-100 p-2 text-muted-foreground hover:text-destructive transition-opacity"
+          title="Delete sentence"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="14" y1="11" y2="17"/><line x1="14" x2="10" y1="11" y2="17"/></svg>
+        </button>
+      </div>`
     ).join('')
-  }
 
-  // Render content or generate if missing
-  if (lesson.conversation) {
-    renderConversation(lesson.conversation)
-  } else {
-    generateConversationForLesson(lesson)
-  }
-
-  if (lesson.sentence) {
-    renderSentence(lesson.sentence)
-  } else {
-    generateSentenceForLesson(lesson)
+    // Add "Add Sentence" button
+    const addBtn = document.createElement('button')
+    addBtn.id = 'add-sentence-btn'
+    addBtn.className = 'mt-2 inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-border/50 bg-muted/50 hover:bg-muted/80 text-muted-foreground hover:text-foreground h-11 px-4 py-2 w-full'
+    addBtn.innerHTML = `
+      <svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      Add More
+    `
+    display.appendChild(addBtn)
   }
 
   // Update sidebar active state
@@ -116,48 +188,78 @@ function showLessonDetailsView(lessonId: string) {
 
 // --- Logic ---
 
-function updateWordsPreview(text: string) {
-  const preview = document.getElementById('words-preview')!
-  const lines = text.split('\n').filter(line => line.trim())
-  
-  if (lines.length > 0) {
-    preview.innerHTML = `Words ready: <strong class="text-foreground">${lines.length}</strong>`
-  } else {
-    preview.innerHTML = ''
+function updateLessonTitle(id: number, title: string) {
+  const lesson = lessons.find(l => l.id === id)
+  if (lesson) {
+    // Strip newlines and trim
+    lesson.title = title.replace(/[\r\n]+/gm, " ").trim() || `Lesson #${lessons.length - lessons.indexOf(lesson)}`
+    saveLessons()
+    renderLessonsList()
   }
 }
 
-async function createNewLesson(wordsText: string) {
-  if (isGenerating) return
-  
-  const generateBtn = document.getElementById('generate-btn') as HTMLButtonElement
-  generateBtn.disabled = true
-  generateBtn.textContent = 'Creating...'
-  isGenerating = true
+function updateSentence(index: number, value: string) {
+  if (currentLessonId === null) return
+  const lesson = lessons.find(l => l.id === currentLessonId)
+  if (lesson) {
+    lesson.sentences[index] = value.trim()
+    saveLessons()
+    renderLessonsList() // Update sidebar preview
+  }
+}
 
-  const words = wordsText.split('\n').filter(line => line.trim())
+function deleteSentence(index: number) {
+  if (currentLessonId === null) return
+  const lesson = lessons.find(l => l.id === currentLessonId)
+  if (lesson) {
+    lesson.sentences.splice(index, 1)
+    saveLessons()
+    showLessonDetailsView(currentLessonId)
+  }
+}
+
+function addSentenceToCurrentLesson() {
+  if (currentLessonId === null) return
+  const lesson = lessons.find(l => l.id === currentLessonId)
+  if (lesson) {
+    lesson.sentences.push('New sentence')
+    saveLessons()
+    showLessonDetailsView(currentLessonId)
+    
+    // Focus the new sentence
+    const display = document.getElementById('lesson-words-display')
+    if (display) {
+      const edits = display.querySelectorAll('.sentence-edit')
+      const lastEdit = edits[edits.length - 1] as HTMLDivElement
+      if (lastEdit) {
+        lastEdit.focus()
+        const range = document.createRange()
+        range.selectNodeContents(lastEdit)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+      }
+    }
+  }
+}
+
+function createNewLesson(text: string) {
+  const sentences = text.split('\n').filter(line => line.trim())
   
   const newLesson: Lesson = {
-    id: crypto.randomUUID(),
+    id: Date.now(),
     date: new Date().toISOString(),
-    words: words,
-    conversation: null,
-    sentence: null
+    title: `Lesson #${lessons.length + 1}`,
+    sentences: sentences
   }
 
-  lessons.unshift(newLesson) // Add to top
+  lessons.unshift(newLesson)
   saveLessons()
   renderLessonsList()
-  
-  // Switch to details view
   showLessonDetailsView(newLesson.id)
-  
-  generateBtn.disabled = false
-  generateBtn.textContent = 'Generate Lesson'
-  isGenerating = false
 }
 
-function deleteLesson(id: string) {
+function deleteLesson(id: number) {
   if (!confirm('Are you sure you want to delete this lesson?')) return
   
   lessons = lessons.filter(l => l.id !== id)
@@ -180,177 +282,31 @@ function renderLessonsList() {
   }
 
   list.innerHTML = lessons.map((lesson, index) => {
-    // Calculate reverse index (Lesson #1 is the oldest)
-    const lessonNumber = lessons.length - index
     const isActive = lesson.id === currentLessonId
     const activeClass = isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'
-    const previewWords = lesson.words.map(w => w.split('-')[0].trim()).join(', ')
+    const preview = lesson.sentences[0] || 'Empty'
     
+    // Ensure title exists for older lessons if any
+    const title = lesson.title || `Lesson #${lessons.length - index}`
+
     return `
       <button 
-        onclick="window.dispatchEvent(new CustomEvent('select-lesson', { detail: '${lesson.id}' }))"
+        data-id="${lesson.id}"
         class="lesson-item w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${activeClass}"
       >
-        <div class="font-medium">Lesson #${lessonNumber}</div>
-        <div class="text-xs opacity-70 truncate" title="${previewWords}">${previewWords}</div>
+        <div class="font-medium truncate">${title}</div>
+        <div class="text-xs opacity-70 truncate">${preview}</div>
       </button>
     `
   }).join('')
 
-  // Re-attach listeners (since we used innerHTML)
-  // We use a custom event pattern here for simplicity with innerHTML
-}
-
-// Listen for custom selection event
-window.addEventListener('select-lesson', ((e: CustomEvent) => {
-  showLessonDetailsView(e.detail)
-}) as EventListener)
-
-
-// --- Generators ---
-
-async function generateConversationForLesson(lesson: Lesson) {
-  const container = document.getElementById('lesson-conversation-content')
-  if (!container) return
-  
-  container.innerHTML = '<div class="flex h-[100px] items-center justify-center text-sm text-muted-foreground animate-pulse">Generating conversation...</div>'
-
-  try {
-    const response = await fetch('http://localhost:8080/api/generate-conversation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: lesson.words })
+  // Add click listeners to buttons
+  list.querySelectorAll('.lesson-item').forEach(button => {
+    button.addEventListener('click', () => {
+      const id = parseInt(button.getAttribute('data-id') || '0')
+      showLessonDetailsView(id)
     })
-
-    if (!response.ok) throw new Error('Failed')
-    const data = await response.json()
-    
-    // Update lesson
-    lesson.conversation = data.conversation
-    saveLessons()
-    renderConversation(lesson.conversation!)
-    
-  } catch (error) {
-    const mock = generateMockConversation(lesson.words)
-    lesson.conversation = mock
-    saveLessons()
-    renderConversation(mock)
-  }
-}
-
-async function generateSentenceForLesson(lesson: Lesson) {
-  const container = document.getElementById('lesson-sentence-content')
-  if (!container) return
-  
-  container.innerHTML = '<div class="flex h-[100px] items-center justify-center text-sm text-muted-foreground animate-pulse">Generating sentence...</div>'
-
-  try {
-    const response = await fetch('http://localhost:8080/api/generate-sentence', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ words: lesson.words })
-    })
-
-    if (!response.ok) throw new Error('Failed')
-    const data = await response.json()
-    
-    // Update lesson
-    lesson.sentence = data.sentence
-    saveLessons()
-    renderSentence(lesson.sentence!)
-    
-  } catch (error) {
-    const mock = generateMockSentence(lesson.words)
-    lesson.sentence = mock
-    saveLessons()
-    renderSentence(mock)
-  }
-}
-
-function renderConversation(text: string) {
-  const container = document.getElementById('lesson-conversation-content')
-  if (container) {
-    container.innerHTML = `<div class="space-y-3">${formatConversation(text)}</div>`
-  }
-}
-
-function renderSentence(text: string) {
-  const container = document.getElementById('lesson-sentence-content')
-  if (container) {
-    container.innerHTML = `<div class="flex flex-col items-center justify-center py-2">${formatSentence(text)}</div>`
-  }
-}
-
-// --- Formatters (Reused) ---
-
-function formatConversation(text: string): string {
-  return text
-    .split('\n')
-    .map(line => {
-      if (line.trim().startsWith('A:') || line.trim().startsWith('B:')) {
-        const speaker = line.substring(0, 2)
-        const content = line.substring(2)
-        const isA = speaker === 'A:'
-        return `
-          <div class="flex gap-3 ${isA ? '' : 'flex-row-reverse'}">
-            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isA ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'} font-bold text-xs">
-              ${speaker.replace(':', '')}
-            </div>
-            <div class="rounded-lg px-4 py-2 text-sm ${isA ? 'bg-primary/10 text-foreground' : 'bg-muted text-muted-foreground'} max-w-[80%]">
-              ${content}
-            </div>
-          </div>
-        `
-      }
-      return `<div class="text-sm text-muted-foreground italic text-center py-2">${line}</div>`
-    })
-    .join('')
-}
-
-function formatSentence(text: string): string {
-  const [german, english] = text.split('|').map(s => s.trim())
-  return `
-    <div class="text-xl font-semibold text-foreground text-center mb-2">${german}</div>
-    <div class="text-sm text-muted-foreground italic text-center">${english || ''}</div>
-  `
-}
-
-function generateMockConversation(words: string[]): string {
-  console.log('Generating mock conversation for words:', words);
-  // const sampleWords = words.slice(0, 3).map(w => w.split('-')[0].trim()).join(', ')
-  return ``;
-  /* return `
-    <div class="flex gap-3">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold text-xs">A</div>
-      <div class="rounded-lg px-4 py-2 text-sm bg-primary/10 text-foreground max-w-[80%]">Hallo! Wie geht es dir heute?</div>
-    </div>
-    <div class="flex gap-3 flex-row-reverse">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground font-bold text-xs">B</div>
-      <div class="rounded-lg px-4 py-2 text-sm bg-muted text-muted-foreground max-w-[80%]">Mir geht es gut, danke! Ich übe gerade neue Wörter.</div>
-    </div>
-    <div class="flex gap-3">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold text-xs">A</div>
-      <div class="rounded-lg px-4 py-2 text-sm bg-primary/10 text-foreground max-w-[80%]">Das ist toll! Welche Wörter lernst du?</div>
-    </div>
-    <div class="flex gap-3 flex-row-reverse">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground font-bold text-xs">B</div>
-      <div class="rounded-lg px-4 py-2 text-sm bg-muted text-muted-foreground max-w-[80%]">Ich lerne: ${sampleWords}</div>
-    </div>
-    <div class="mt-4 p-3 bg-yellow-500/10 rounded-md text-yellow-600 text-xs text-center">
-      Note: Connect your backend API to get AI-generated conversations using your specific words.
-    </div>
- */  
-}
-
-function generateMockSentence(words: string[]): string {
-  const firstWord = words[0]?.split('-')[0].trim() || 'das Wort'
-  return `
-    <div class="text-xl font-semibold text-foreground text-center mb-2">Heute lerne ich ${firstWord} und benutze es jeden Tag.</div>
-    <div class="text-sm text-muted-foreground italic text-center">Today I'm learning ${firstWord} and using it every day.</div>
-    <div class="mt-4 p-3 bg-yellow-500/10 rounded-md text-yellow-600 text-xs text-center w-full">
-      Note: Connect your backend API to get AI-generated sentences using your specific words.
-    </div>
-  `
+  })
 }
 
 // Start
